@@ -18,7 +18,7 @@
 */
 
 #include "vitoconnect.h"
-#include "number/vitoconnect_number.h"
+#include "./number/vitoconnect_number.h"
 
 namespace esphome {
 namespace vitoconnect {
