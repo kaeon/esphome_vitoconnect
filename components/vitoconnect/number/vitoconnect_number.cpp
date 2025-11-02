@@ -82,19 +82,17 @@ void OPTOLINKNumber::encode(uint8_t* raw, uint8_t length, float data) {
   ESP_LOGD(TAG, "encode called with data: %f", data);
 
   if(_length == 1) {
-    int8_t tmp = floor((value) + 0.5);
+    uint8_t tmp = (uint8_t)(floor((value) + 0.5));
     raw[0] = tmp;
   }
-
   // Commonly temperature with factor /10 or /100
-  if (_length == 2){
+  else if (_length == 2){
     int16_t tmp = floor((value) + 0.5);
     raw[1] = tmp >> 8;
     raw[0] = tmp & 0xFF;
   }
-
   // Commonly counter with different factors
-  if (_length == 4){
+  else if (_length == 4){
     uint32_t tmp = floor((value) + 0.5f);
     raw[3] = tmp >> 24;
     raw[2] = tmp >> 16;
