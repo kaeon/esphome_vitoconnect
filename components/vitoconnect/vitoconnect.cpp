@@ -126,6 +126,7 @@ void VitoConnect::_onData(uint8_t* data, uint8_t len, void* arg) {
         cbArg->dp->clearLastUpdate();
       } else {
         ESP_LOGW(TAG, "Previous write operation for datapoint with address %x failed verification.", cbArg->dp->getAddress());
+        ESP_LOGW(TAG, "Expected value: 0x%02X, received value: 0x%02X", cbArg->d[0], data[0]);
       }
     }
   } else if (!cbArg->w) {
