@@ -81,6 +81,7 @@ void VitoConnect::update() {
       CbArg* writeCbArg = new CbArg(this, dp, true, dp->getLastUpdate());        
       if (!_optolink->write(dp->getAddress(), dp->getLength(), data, reinterpret_cast<void*>(writeCbArg))) {
         delete writeCbArg;
+        delete[] data;  // Free the data buffer if write fails to queue
         return;
       }
       
@@ -88,6 +89,7 @@ void VitoConnect::update() {
       CbArg* readCbArg = new CbArg(this, dp, false, 0, data);
       if (!_optolink->read(dp->getAddress(), dp->getLength(), reinterpret_cast<void*>(readCbArg))) {
         delete readCbArg;
+        delete[] data;  // Free the data buffer if read fails to queue
         return;
       }
     }
@@ -126,8 +128,9 @@ void VitoConnect::_onData(uint8_t* data, uint8_t len, void* arg) {
         cbArg->dp->clearLastUpdate();
       } else {
         ESP_LOGW(TAG, "Previous write operation for datapoint with address %x failed verification.", cbArg->dp->getAddress());
-        ESP_LOGW(TAG, "Expected value: 0x%02X, received value: 0x%02X", cbArg->d[0], data[0]);
       }
+      // Free the data buffer that was allocated for verification
+      delete[] cbArg->d;
     }
   } else if (!cbArg->w) {
     cbArg->dp->decode(data, len, cbArg->dp);
@@ -140,6 +143,10 @@ void VitoConnect::_onError(uint8_t error, void* arg) {
   ESP_LOGD(TAG, "Error received: %d", error);
   CbArg* cbArg = reinterpret_cast<CbArg*>(arg);
   if (cbArg->v->_onErrorCb) cbArg->v->_onErrorCb(error, cbArg->dp);
+  // Free the data buffer if it was allocated for verification
+  if (cbArg->d != nullptr) {
+    delete[] cbArg->d;
+  }
   delete cbArg;
 }
 

@@ -42,7 +42,6 @@ void OPTOLINKNumber::decode(uint8_t* data, uint8_t length, Datapoint* dp) {
   
   if (_length == 1){         // Commonly percentage with factor /2
     value = (float) data[0];
-    ESP_LOGD(TAG, "decode length=1: read byte value %d (0x%02X)", data[0], data[0]);
   }
   else if (_length == 2){   // Commonly temperature with factor /10 or /100
     int16_t tmp = 0;
@@ -80,12 +79,11 @@ void OPTOLINKNumber::encode(uint8_t* raw, uint8_t length, float data) {
   assert(length >= _length);
   float value = data * this->_div_ratio;
 
-  ESP_LOGD(TAG, "encode called with data: %f, after div_ratio: %f", data, value);
+  ESP_LOGD(TAG, "encode called with data: %f", data);
 
   if(_length == 1) {
     uint8_t tmp = (uint8_t)(floor((value) + 0.5));
     raw[0] = tmp;
-    ESP_LOGD(TAG, "encode length=1: writing byte value %d (0x%02X)", tmp, tmp);
   }
   // Commonly temperature with factor /10 or /100
   else if (_length == 2){
