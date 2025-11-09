@@ -187,6 +187,14 @@ class Optolink {
    */
   virtual void loop() = 0;
 
+  /**
+   * @brief Check if protocol is ready to accept new requests
+   * 
+   * @return true if protocol is in a state ready for communication
+   * @return false if still initializing or recovering from error
+   */
+  virtual bool is_ready() const = 0;
+
 
  protected:
   void _tryOnData(uint8_t* data, uint8_t len);

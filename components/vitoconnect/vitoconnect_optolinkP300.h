@@ -70,6 +70,14 @@ class OptolinkP300 : public Optolink {
    */
   void loop();
 
+  /**
+   * @brief Check if protocol is ready to accept new requests
+   * 
+   * @return true if in IDLE state and ready for communication
+   * @return false if still initializing (RESET, RESET_ACK, INIT, INIT_ACK)
+   */
+  bool is_ready() const { return _state == IDLE || _state == SEND || _state == SEND_ACK || _state == RECEIVE || _state == RECEIVE_ACK; }
+
  private:
   enum OptolinkState : uint8_t {
     RESET = 0,

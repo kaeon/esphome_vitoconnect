@@ -70,6 +70,14 @@ class OptolinkKW : public Optolink {
    */
   void loop();
 
+  /**
+   * @brief Check if protocol is ready to accept new requests
+   * 
+   * @return true if in IDLE state and ready for communication
+   * @return false if still initializing (INIT, SYNC states)
+   */
+  bool is_ready() const { return _state == IDLE || _state == SEND || _state == RECEIVE; }
+
  private:
   enum OptolinkState : uint8_t {
     INIT,

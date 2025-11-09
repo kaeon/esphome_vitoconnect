@@ -30,6 +30,7 @@
 #include "vitoconnect_optolinkP300.h"
 #include "vitoconnect_optolinkKW.h"
 #include "vitoconnect_datapoint.h"
+#include "vitoconnect_smart_queue.h"
 
 using namespace std;
 
@@ -76,6 +77,7 @@ class VitoConnect : public uart::UARTDevice, public PollingComponent {
     Optolink* _optolink;
     std::vector<Datapoint*> _datapoints;
     std::string protocol;
+    SmartQueue smart_queue_;
     struct CbArg {
       CbArg(VitoConnect* vw, Datapoint* d, bool write, uint32_t last_update, uint8_t* data = nullptr) :
         v(vw),
