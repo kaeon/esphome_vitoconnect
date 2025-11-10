@@ -20,6 +20,7 @@
 #include <cstdint>
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
+#include "vitoconnect_datapoint.h"  // For ComponentType enum
 
 namespace esphome {
 namespace vitoconnect {
@@ -32,13 +33,15 @@ struct QueuedRequest {
   uint8_t length;
   bool is_write;
   void* callback_arg;
+  ComponentType component_type;  // Component type for deduplication
   uint32_t enqueue_time;
   
   /**
    * @brief Check if this request matches given parameters
+   * Component-aware: same address + operation + component type = duplicate
    */
-  bool matches(uint16_t addr, bool write) const {
-    return (address == addr && is_write == write);
+  bool matches(uint16_t addr, bool write, ComponentType comp_type) const {
+    return (address == addr && is_write == write && component_type == comp_type);
   }
 };
 
@@ -60,20 +63,21 @@ class SmartQueue {
   SmartQueue() : current_request_(nullptr), last_comm_time_(0) {}
   
   /**
-   * @brief Enqueue a new request with automatic priority and deduplication
+   * @brief Enqueue a new request with automatic priority and component-aware deduplication
    * 
    * @param address Datapoint address
    * @param length Data length in bytes
    * @param is_write True for write, false for read
    * @param arg Callback argument
+   * @param comp_type Component type (SENSOR, NUMBER, etc.) for deduplication
    * @return true if successfully enqueued or already queued
    * @return false if queue is full
    */
-  bool enqueue(uint16_t address, uint8_t length, bool is_write, void* arg) {
-    // Check for duplicate
-    if (has_pending(address, is_write)) {
-      ESP_LOGD("vitoconnect.queue", "Duplicate avoided: 0x%04X %s", address, 
-               is_write ? "write" : "read");
+  bool enqueue(uint16_t address, uint8_t length, bool is_write, void* arg, ComponentType comp_type) {
+    // Check for duplicate (component-aware: same address + operation + component type)
+    if (has_pending(address, is_write, comp_type)) {
+      ESP_LOGVV("vitoconnect.queue", "Duplicate avoided: 0x%04X %s type:%d", address, 
+               is_write ? "write" : "read", static_cast<int>(comp_type));
       return true;  // Already queued, consider it success
     }
     
@@ -88,17 +92,18 @@ class SmartQueue {
     req.length = length;
     req.is_write = is_write;
     req.callback_arg = arg;
+    req.component_type = comp_type;
     req.enqueue_time = millis();
     
     // Add to appropriate queue
     if (is_write) {
       write_queue_.push_back(req);
-      ESP_LOGD("vitoconnect.queue", "Enqueued WRITE 0x%04X (writes:%d, reads:%d)", 
-               address, write_queue_.size(), read_queue_.size());
+      ESP_LOGD("vitoconnect.queue", "Enqueued WRITE 0x%04X type:%d (writes:%d, reads:%d)", 
+               address, static_cast<int>(comp_type), write_queue_.size(), read_queue_.size());
     } else {
       read_queue_.push_back(req);
-      ESP_LOGV("vitoconnect.queue", "Enqueued read 0x%04X (writes:%d, reads:%d)", 
-               address, write_queue_.size(), read_queue_.size());
+      ESP_LOGV("vitoconnect.queue", "Enqueued read 0x%04X type:%d (writes:%d, reads:%d)", 
+               address, static_cast<int>(comp_type), write_queue_.size(), read_queue_.size());
     }
     
     return true;
@@ -184,25 +189,26 @@ class SmartQueue {
   }
   
   /**
-   * @brief Check if specific request is pending
+   * @brief Check if specific request is pending (component-aware)
    * 
    * @param address Datapoint address
    * @param is_write True for write, false for read
+   * @param comp_type Component type for deduplication
    * @return true if request is queued or currently processing
    */
-  bool has_pending(uint16_t address, bool is_write) const {
+  bool has_pending(uint16_t address, bool is_write, ComponentType comp_type) const {
     if (is_write) {
       for (const auto& req : write_queue_) {
-        if (req.matches(address, is_write)) return true;
+        if (req.matches(address, is_write, comp_type)) return true;
       }
     } else {
       for (const auto& req : read_queue_) {
-        if (req.matches(address, is_write)) return true;
+        if (req.matches(address, is_write, comp_type)) return true;
       }
     }
     
     // Check if currently processing
-    if (current_request_ && current_request_->matches(address, is_write)) {
+    if (current_request_ && current_request_->matches(address, is_write, comp_type)) {
       return true;
     }
     

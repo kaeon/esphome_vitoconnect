@@ -5,7 +5,9 @@ namespace vitoconnect {
 
 static const char *TAG = "vitoconnect.switch";
 
-OPTOLINKSwitch::OPTOLINKSwitch(){}
+OPTOLINKSwitch::OPTOLINKSwitch(){
+  this->setComponentType(ComponentType::SWITCH);
+}
 
 OPTOLINKSwitch::~OPTOLINKSwitch() {}
 

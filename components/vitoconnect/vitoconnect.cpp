@@ -121,7 +121,7 @@ void VitoConnect::update() {
 
       // Write the modified datapoint - enqueue to SmartQueue, NOT Optolink
       CbArg* writeCbArg = new CbArg(this, dp, true, dp->getLastUpdate());        
-      if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), true, reinterpret_cast<void*>(writeCbArg))) {
+      if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), true, reinterpret_cast<void*>(writeCbArg), dp->getComponentType())) {
         ESP_LOGW(TAG, "Failed to queue write for 0x%04X", dp->getAddress());
         delete writeCbArg;
         delete[] data;
@@ -130,7 +130,7 @@ void VitoConnect::update() {
       
       // Also queue verification read (will execute after write completes)
       CbArg* readCbArg = new CbArg(this, dp, false, 0, data);
-      if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), false, reinterpret_cast<void*>(readCbArg))) {
+      if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), false, reinterpret_cast<void*>(readCbArg), dp->getComponentType())) {
         ESP_LOGW(TAG, "Failed to queue verification read for 0x%04X", dp->getAddress());
         delete readCbArg;
         delete[] data;
@@ -138,10 +138,10 @@ void VitoConnect::update() {
     }
   }
   
-  // 2. Then enqueue all READS (lower priority, deduplication happens automatically)
+  // 2. Then enqueue all READS (lower priority, component-aware deduplication)
   for (Datapoint* dp : this->_datapoints) {
     CbArg* arg = new CbArg(this, dp, false, 0);
-    if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), false, reinterpret_cast<void*>(arg))) {
+    if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), false, reinterpret_cast<void*>(arg), dp->getComponentType())) {
       // Queue full or duplicate - not critical for reads
       delete arg;
     }

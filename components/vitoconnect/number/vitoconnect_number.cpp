@@ -5,7 +5,9 @@ namespace vitoconnect {
 
 static const char *TAG = "vitoconnect.number";
 
-OPTOLINKNumber::OPTOLINKNumber(){}
+OPTOLINKNumber::OPTOLINKNumber(){
+  this->setComponentType(ComponentType::NUMBER);
+}
 
 OPTOLINKNumber::~OPTOLINKNumber() {}
 

@@ -6,7 +6,7 @@ namespace vitoconnect {
 static const char *TAG = "vitoconnect.binary_sensor";
 
 OPTOLINKBinarySensor::OPTOLINKBinarySensor(){
-  // empty
+  this->setComponentType(ComponentType::BINARY_SENSOR);
 }
 
 OPTOLINKBinarySensor::~OPTOLINKBinarySensor() {

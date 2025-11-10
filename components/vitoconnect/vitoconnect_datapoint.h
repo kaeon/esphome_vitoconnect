@@ -33,6 +33,14 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 namespace esphome {
 namespace vitoconnect {
 
+enum class ComponentType : uint8_t {
+  UNKNOWN = 0,
+  SENSOR = 1,
+  NUMBER = 2,
+  BINARY_SENSOR = 3,
+  SWITCH = 4
+};
+
 class Datapoint {
 
  public:
@@ -44,6 +52,9 @@ class Datapoint {
   
   void setLength(uint8_t length) {  this->_length = length; };
   uint8_t getLength() { return this->_length; };
+
+  void setComponentType(ComponentType type) { this->_component_type = type; };
+  ComponentType getComponentType() const { return this->_component_type; };
 
   static void onData(std::function<void(uint8_t[], uint8_t, Datapoint* dp)> callback);
   void onError(uint8_t, Datapoint* dp);
@@ -59,6 +70,7 @@ class Datapoint {
   uint32_t _last_update = 0;
   uint16_t _address;
   uint8_t _length;
+  ComponentType _component_type = ComponentType::UNKNOWN;
   static std::function<void(uint8_t[], uint8_t, Datapoint* dp)> _stdOnData;
 };
 

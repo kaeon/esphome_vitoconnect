@@ -6,7 +6,7 @@ namespace vitoconnect {
 static const char *TAG = "vitoconnect.sensor";
 
 OPTOLINKSensor::OPTOLINKSensor(){
-  // empty
+  this->setComponentType(ComponentType::SENSOR);
 }
 
 OPTOLINKSensor::~OPTOLINKSensor() {
