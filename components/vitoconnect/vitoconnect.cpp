@@ -115,7 +115,8 @@ void VitoConnect::loop() {
       } else {
         // Read request
         if (!_optolink->read(req->address, req->length, req->callback_arg)) {
-          ESP_LOGV(TAG, "Optolink queue full for read 0x%04X, will retry", req->address);
+          ESP_LOGV(TAG, "Optolink queue full for read 0x%04X (queue: %d/64), will retry after throttle", 
+                   req->address, _optolink->queue_size());
           // Retry current request with throttling
           smart_queue_.retry_current();
           return;

@@ -124,16 +124,6 @@ class SmartQueue {
   QueuedRequest* get_next() {
     uint32_t now = millis();
     
-    // Check retry throttle delay (prevents busy-wait loop)
-    if (last_retry_time_ > 0 && now - last_retry_time_ < RETRY_DELAY_MS) {
-      return nullptr;  // Still in throttle period, wait longer
-    }
-    
-    // Check inter-comm delay (only when selecting NEW request)
-    if (!has_current_ && now - last_comm_time_ < INTER_COMM_DELAY_MS) {
-      return nullptr;
-    }
-    
     // Already processing a request
     if (has_current_) {
       QueuedRequest* current = get_current_ptr();
@@ -152,6 +142,16 @@ class SmartQueue {
       }
       
       return current;
+    }
+    
+    // Check retry throttle delay BEFORE selecting new request (prevents busy-wait loop)
+    if (last_retry_time_ > 0 && now - last_retry_time_ < RETRY_DELAY_MS) {
+      return nullptr;  // Still in throttle period, wait longer
+    }
+    
+    // Check inter-comm delay (only when selecting NEW request)
+    if (now - last_comm_time_ < INTER_COMM_DELAY_MS) {
+      return nullptr;
     }
     
     // Priority: writes before reads
