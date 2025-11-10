@@ -65,9 +65,10 @@ void VitoConnect::loop() {
     
     // Only try to push requests if protocol is ready (not initializing)
     if (!_optolink->is_ready()) {
-      // Protocol is initializing (RESET/INIT states), retry current request later
+      // Protocol is initializing (RESET/INIT states), skip current request for now
       // This prevents pushing to Optolink while it's not ready to accept commands
-      smart_queue_.retry_current();
+      // Don't count this as a retry (protocol not ready is expected during startup)
+      smart_queue_.skip_current();
       return;
     }
     
@@ -91,7 +92,11 @@ void VitoConnect::loop() {
                    _optolink->queue_size(), OPTOLINK_MAX);
           last_full_log = millis();
         }
-        smart_queue_.retry_current();
+        // Retry with throttling (may fail if max retries exceeded)
+        if (!smart_queue_.retry_current()) {
+          // Max retries exceeded, request was released
+          return;
+        }
         return;
       }
       
@@ -107,9 +112,13 @@ void VitoConnect::loop() {
         delete[] data;  // Optolink copies the data
         
         if (!success) {
-          ESP_LOGV(TAG, "Optolink queue full for write 0x%04X, will retry", req->address);
-          // Retry current request with throttling
-          smart_queue_.retry_current();
+          ESP_LOGV(TAG, "Optolink queue full for write 0x%04X (queue: %d/64), will retry", 
+                   req->address, _optolink->queue_size());
+          // Retry current request with throttling (may fail if max retries exceeded)
+          if (!smart_queue_.retry_current()) {
+            // Max retries exceeded, request was released
+            return;
+          }
           return;
         }
       } else {
@@ -117,8 +126,11 @@ void VitoConnect::loop() {
         if (!_optolink->read(req->address, req->length, req->callback_arg)) {
           ESP_LOGV(TAG, "Optolink queue full for read 0x%04X (queue: %d/64), will retry after throttle", 
                    req->address, _optolink->queue_size());
-          // Retry current request with throttling
-          smart_queue_.retry_current();
+          // Retry current request with throttling (may fail if max retries exceeded)
+          if (!smart_queue_.retry_current()) {
+            // Max retries exceeded, request was released
+            return;
+          }
           return;
         }
       }

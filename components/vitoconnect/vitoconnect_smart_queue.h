@@ -35,6 +35,7 @@ struct QueuedRequest {
   void* callback_arg;          // Pointer to CbArg for callback
   uint8_t component_type;      // Component type for safe deduplication
   uint32_t enqueue_time;
+  uint8_t retry_count;         // Track retry attempts
   
   /**
    * @brief Check if this request matches given parameters
@@ -61,6 +62,7 @@ class SmartQueue {
   static constexpr uint32_t INTER_COMM_DELAY_MS = 50;
   static constexpr uint32_t REQUEST_TIMEOUT_MS = 30000;
   static constexpr uint32_t RETRY_DELAY_MS = 50;  // Minimum delay between retries
+  static constexpr uint8_t MAX_RETRY_COUNT = 10;  // Max retries before giving up
   
   SmartQueue() : has_current_(false), current_is_write_(false), last_comm_time_(0), last_retry_time_(0) {}
   
@@ -100,6 +102,7 @@ class SmartQueue {
     req.callback_arg = arg;
     req.component_type = comp_type;
     req.enqueue_time = millis();
+    req.retry_count = 0;
     
     // Add to appropriate queue
     if (is_write) {
@@ -177,17 +180,55 @@ class SmartQueue {
   }
   
   /**
-   * @brief Retry current request with throttling
+   * @brief Skip current request without counting as retry (e.g., protocol not ready)
+   * This is used for temporary conditions that don't indicate a failure
    */
-  void retry_current() {
+  void skip_current() {
     if (!has_current_) {
       return;
     }
     
+    QueuedRequest* current = get_current_ptr();
+    if (current == nullptr) {
+      has_current_ = false;
+      return;
+    }
+    
+    // Don't increment retry_count, just release for now
+    has_current_ = false;
+    ESP_LOGV("vitoconnect.queue", "Request 0x%04X skipped (will retry later)", current->address);
+  }
+  
+  /**
+   * @brief Retry current request with throttling
+   * Returns true if retry is allowed, false if max retries exceeded
+   */
+  bool retry_current() {
+    if (!has_current_) {
+      return false;
+    }
+    
+    QueuedRequest* current = get_current_ptr();
+    if (current == nullptr) {
+      has_current_ = false;
+      return false;
+    }
+    
+    // Check max retry count
+    if (current->retry_count >= MAX_RETRY_COUNT) {
+      ESP_LOGW("vitoconnect.queue", "Request 0x%04X exceeded max retries (%d), releasing", 
+               current->address, MAX_RETRY_COUNT);
+      release_current();
+      return false;
+    }
+    
+    current->retry_count++;
     last_retry_time_ = millis();
     has_current_ = false;
     
-    ESP_LOGV("vitoconnect.queue", "Request retry scheduled after %dms", RETRY_DELAY_MS);
+    ESP_LOGV("vitoconnect.queue", "Request retry %d/%d scheduled after %dms", 
+             current->retry_count, MAX_RETRY_COUNT, RETRY_DELAY_MS);
+    return true;
   }
   
   /**
