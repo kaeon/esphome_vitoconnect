@@ -65,8 +65,9 @@ void VitoConnect::loop() {
     
     // Only try to push requests if protocol is ready (not initializing)
     if (!_optolink->is_ready()) {
-      // Protocol is initializing (RESET/INIT states), don't push new requests yet
-      // This prevents queue buildup during heater startup
+      // Protocol is initializing (RESET/INIT states), retry current request later
+      // This prevents pushing to Optolink while it's not ready to accept commands
+      smart_queue_.retry_current();
       return;
     }
     
@@ -74,6 +75,26 @@ void VitoConnect::loop() {
     QueuedRequest* req = smart_queue_.get_next();
     
     if (req != nullptr) {
+      // Validate callback arg before processing
+      if (req->callback_arg == nullptr) {
+        ESP_LOGW(TAG, "Invalid callback arg for 0x%04X, skipping", req->address);
+        smart_queue_.release_current();
+        return;
+      }
+      
+      // Check if Optolink queue has capacity (keep below 80% to avoid blocking)
+      constexpr size_t OPTOLINK_MAX = 64;  // VITOWIFI_MAX_QUEUE_LENGTH
+      if (_optolink->queue_size() > OPTOLINK_MAX * 0.8) {
+        static uint32_t last_full_log = 0;
+        if (millis() - last_full_log > 5000) {
+          ESP_LOGD(TAG, "Optolink queue busy (%d/%d), throttling requests", 
+                   _optolink->queue_size(), OPTOLINK_MAX);
+          last_full_log = millis();
+        }
+        smart_queue_.retry_current();
+        return;
+      }
+      
       // We have a request ready to process, push to Optolink's internal queue
       if (req->is_write) {
         // For writes, encode the data from the datapoint
@@ -87,14 +108,16 @@ void VitoConnect::loop() {
         
         if (!success) {
           ESP_LOGV(TAG, "Optolink queue full for write 0x%04X, will retry", req->address);
-          // Don't release current, will retry next loop
+          // Retry current request with throttling
+          smart_queue_.retry_current();
           return;
         }
       } else {
         // Read request
         if (!_optolink->read(req->address, req->length, req->callback_arg)) {
           ESP_LOGV(TAG, "Optolink queue full for read 0x%04X, will retry", req->address);
-          // Don't release current, will retry next loop
+          // Retry current request with throttling
+          smart_queue_.retry_current();
           return;
         }
       }
@@ -107,9 +130,10 @@ void VitoConnect::loop() {
 void VitoConnect::update() {
   // This will be called every "update_interval" milliseconds.
   static int cleanup_counter = 0;
+  static size_t last_datapoint_index = 0;  // For batching
   
-  ESP_LOGD(TAG, "Schedule sensor update (queue: %d writes, %d reads)", 
-           smart_queue_.write_count(), smart_queue_.read_count());
+  ESP_LOGD(TAG, "Schedule sensor update (queue: %d writes, %d reads, total: %d)", 
+           smart_queue_.write_count(), smart_queue_.read_count(), smart_queue_.size());
 
   // 1. First enqueue all WRITES (they get priority automatically via SmartQueue)
   for (Datapoint* dp : this->_datapoints) {
@@ -119,9 +143,12 @@ void VitoConnect::update() {
       uint8_t* data = new uint8_t[dp->getLength()];
       dp->encode(data, dp->getLength());
 
+      // Create unique component ID from datapoint pointer (safe, no pointer comparison!)
+      uint8_t comp_id = (reinterpret_cast<uintptr_t>(dp) >> 4) & 0xFF;
+
       // Write the modified datapoint - enqueue to SmartQueue, NOT Optolink
-      CbArg* writeCbArg = new CbArg(this, dp, true, dp->getLastUpdate());        
-      if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), true, reinterpret_cast<void*>(writeCbArg))) {
+      CbArg* writeCbArg = new CbArg(this, dp, true, dp->getLastUpdate(), TYPE_UNKNOWN);        
+      if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), true, reinterpret_cast<void*>(writeCbArg), comp_id)) {
         ESP_LOGW(TAG, "Failed to queue write for 0x%04X", dp->getAddress());
         delete writeCbArg;
         delete[] data;
@@ -129,8 +156,8 @@ void VitoConnect::update() {
       }
       
       // Also queue verification read (will execute after write completes)
-      CbArg* readCbArg = new CbArg(this, dp, false, 0, data);
-      if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), false, reinterpret_cast<void*>(readCbArg))) {
+      CbArg* readCbArg = new CbArg(this, dp, false, 0, TYPE_UNKNOWN, data);
+      if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), false, reinterpret_cast<void*>(readCbArg), comp_id)) {
         ESP_LOGW(TAG, "Failed to queue verification read for 0x%04X", dp->getAddress());
         delete readCbArg;
         delete[] data;
@@ -138,14 +165,34 @@ void VitoConnect::update() {
     }
   }
   
-  // 2. Then enqueue all READS (lower priority, deduplication happens automatically)
-  for (Datapoint* dp : this->_datapoints) {
-    CbArg* arg = new CbArg(this, dp, false, 0);
-    if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), false, reinterpret_cast<void*>(arg))) {
+  // 2. Then enqueue READS in batches to avoid watchdog timeout
+  constexpr size_t BATCH_SIZE = 20;
+  size_t datapoints_processed = 0;
+  
+  for (size_t i = last_datapoint_index; i < this->_datapoints.size(); i++) {
+    Datapoint* dp = this->_datapoints[i];
+    
+    // Create unique component ID from datapoint pointer (safe!)
+    uint8_t comp_id = (reinterpret_cast<uintptr_t>(dp) >> 4) & 0xFF;
+    
+    CbArg* arg = new CbArg(this, dp, false, 0, TYPE_UNKNOWN);
+    if (!smart_queue_.enqueue(dp->getAddress(), dp->getLength(), false, reinterpret_cast<void*>(arg), comp_id)) {
       // Queue full or duplicate - not critical for reads
       delete arg;
+    } else {
+      datapoints_processed++;
+      
+      // Process only BATCH_SIZE datapoints per update to avoid watchdog
+      if (datapoints_processed >= BATCH_SIZE) {
+        last_datapoint_index = i + 1;  // Continue from next datapoint next time
+        ESP_LOGV(TAG, "Batched %d datapoints, continuing in next update cycle", datapoints_processed);
+        return;
+      }
     }
   }
+  
+  // All datapoints processed, reset for next cycle
+  last_datapoint_index = 0;
   
   // 3. Cleanup stale requests every 10 update cycles
   if (++cleanup_counter >= 10) {

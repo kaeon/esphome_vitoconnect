@@ -38,6 +38,18 @@ namespace esphome {
 namespace vitoconnect {
 
 /**
+ * @brief Component type identifier for safe deduplication
+ * Used instead of pointer comparison to avoid crashes
+ */
+enum ComponentType : uint8_t {
+  TYPE_UNKNOWN = 0,
+  TYPE_SENSOR = 1,
+  TYPE_NUMBER = 2,
+  TYPE_BINARY_SENSOR = 3,
+  TYPE_SWITCH = 4
+};
+
+/**
  * @brief VitoConnect manages the esphome components, their datapoints and optolink to your Viessmann device.
  * 
  */
@@ -79,16 +91,18 @@ class VitoConnect : public uart::UARTDevice, public PollingComponent {
     std::string protocol;
     SmartQueue smart_queue_;
     struct CbArg {
-      CbArg(VitoConnect* vw, Datapoint* d, bool write, uint32_t last_update, uint8_t* data = nullptr) :
+      CbArg(VitoConnect* vw, Datapoint* d, bool write, uint32_t last_update, ComponentType comp_type, uint8_t* data = nullptr) :
         v(vw),
         dp(d),
         w(write),
         la(last_update),
+        type(comp_type),
         d(data) {}
       VitoConnect* v;
       Datapoint* dp;
       bool w;
       uint32_t la;
+      ComponentType type;
       uint8_t* d;
     };
     static void _onData(uint8_t* data, uint8_t len, void* arg);

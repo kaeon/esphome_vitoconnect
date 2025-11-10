@@ -195,6 +195,13 @@ class Optolink {
    */
   virtual bool is_ready() const = 0;
 
+  /**
+   * @brief Get current queue size for monitoring
+   * 
+   * @return number of items in internal queue
+   */
+  size_t queue_size() const { return _queue.size(); }
+
 
  protected:
   void _tryOnData(uint8_t* data, uint8_t len);
